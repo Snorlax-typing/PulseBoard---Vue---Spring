@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PulseBoard · Vue × Spring 全栈实时看板</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%236DB33F'/%3E%3Cpath d='M4 13h3l2-6 4 12 2-6h5' stroke='white' stroke-width='1.8' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="https://miaoda.feishu.cn/fonts/css2?family=Noto+Sans+SC:wght@300;400;500;700;900&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+<style>
+:root{
+  --bg:#0a0f14; --bg-2:#0e151c; --panel:#121b24; --panel-2:#16222e;
+  --line:#1f2d3b; --line-soft:#1a2632;
+  --txt:#e6edf3; --mut:#8295a5; --dim:#5a6d7d;
+  --green:#6DB33F; --green-l:#9be06a; --teal:#2dd4bf; --blue:#4f9ef5;
+  --amber:#f5b942; --red:#f56c6c; --purple:#a78bfa;
+  --glow:0 0 24px rgba(109,179,63,.25);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{font-family:"Noto Sans SC",-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--txt);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+.mono{font-family:"JetBrains Mono",Consolas,monospace}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+input,select{font-family:inherit}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-thumb{background:#243342;border-radius:10px}
+::-webkit-scrollbar-track{background:transparent}
+
+#app{min-height:100vh;display:flex;flex-direction:column}
+
+/* ===== 顶栏 ===== */
+.topbar{position:sticky;top:0;z-index:50;background:rgba(10,15,20,.88);backdrop-filter:blur(14px);border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 26px;height:62px}
+.logo{display:flex;align-items:center;gap:11px;font-weight:900;font-size:18px;letter-spacing:.3px}
+.logo .mark{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--green),#4e9228);display:grid;place-items:center;box-shadow:var(--glow)}
+.logo .stack{font-size:11px;font-weight:500;color:var(--mut);background:var(--panel);padding:2px 9px;border-radius:20px;border:1px solid var(--line)}
+.top-right{display:flex;align-items:center;gap:18px}
+.conn{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;padding:6px 14px;border-radius:20px;border:1px solid var(--line)}
+.conn .dot{width:8px;height:8px;border-radius:50%}
+.conn.ok{color:var(--green-l);border-color:rgba(109,179,63,.4);background:rgba(109,179,63,.08)}
+.conn.ok .dot{background:var(--green);box-shadow:0 0 8px var(--green);animation:blink 1.6s infinite}
+.conn.no{color:var(--red);border-color:rgba(245,108,108,.35);background:rgba(245,108,108,.08)}
+.conn.no .dot{background:var(--red)}
+@keyframes blink{50%{opacity:.4}}
+.clock{font-family:"JetBrains Mono",monospace;font-size:13px;color:var(--mut)}
+
+/* ===== 标签导航 ===== */
+.tabs{display:flex;gap:4px;padding:14px 26px 0}
+.tab{padding:10px 22px;font-size:14px;font-weight:600;color:var(--mut);border-radius:10px 10px 0 0;border:1px solid transparent;transition:.2s;position:relative}
+.tab:hover{color:var(--txt)}
+.tab.active{color:var(--green-l);background:var(--panel);border-color:var(--line);border-bottom-color:var(--panel)}
+.tab.active::after{content:"";position:absolute;left:12px;right:12px;bottom:-1px;height:2px;background:var(--green)}
+
+/* ===== 主内容 ===== */
+.main{flex:1;padding:24px 26px 40px;max-width:1500px;width:100%;margin:0 auto}
+.view{animation:fade .4s ease}
+@keyframes fade{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+
+/* KPI 卡 */
+.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px}
+.kpi{background:linear-gradient(160deg,var(--panel-2),var(--panel));border:1px solid var(--line);border-radius:14px;padding:20px 22px;position:relative;overflow:hidden;transition:.25s}
+.kpi:hover{border-color:#2c4052;transform:translateY(-3px)}
+.kpi .k-lbl{font-size:12.5px;color:var(--mut);display:flex;align-items:center;gap:7px;margin-bottom:12px}
+.kpi .k-val{font-size:32px;font-weight:900;font-family:"JetBrains Mono",monospace;line-height:1}
+.kpi .k-sub{font-size:11.5px;color:var(--dim);margin-top:8px}
+.kpi .k-ico{position:absolute;right:16px;top:18px;opacity:.5}
+.kpi.green .k-val{color:var(--green-l)} .kpi.blue .k-val{color:var(--blue)}
+.kpi.amber .k-val{color:var(--amber)} .kpi.teal .k-val{color:var(--teal)}
+.kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--green)}
+.kpi.blue::before{background:var(--blue)} .kpi.amber::before{background:var(--amber)} .kpi.teal::before{background:var(--teal)}
+
+/* 图表 */
+.chart-grid{display:grid;grid-template-columns:1.6fr 1fr;gap:16px;margin-bottom:20px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px 22px}
+.panel-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.panel-head h3{font-size:15px;font-weight:700;display:flex;align-items:center;gap:9px}
+.live-tag{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--green-l);font-family:"JetBrains Mono",monospace}
+.live-tag .dot{width:7px;height:7px;border-radius:50%;background:var(--green);animation:blink 1.4s infinite}
+.chart{width:100%;height:300px}
+.chart.sm{height:300px}
+
+/* 实时指标条 */
+.metric-row{display:grid;grid-template-columns:repeat(5,1fr);gap:14px}
+.metric{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+.metric .m-lbl{font-size:11.5px;color:var(--mut);margin-bottom:9px;text-transform:uppercase;letter-spacing:.5px}
+.metric .m-val{font-size:22px;font-weight:700;font-family:"JetBrains Mono",monospace}
+.metric .bar{height:5px;background:var(--line-soft);border-radius:5px;margin-top:10px;overflow:hidden}
+.metric .bar i{display:block;height:100%;border-radius:5px;background:linear-gradient(90deg,var(--green),var(--teal));transition:width .8s ease}
+
+/* ===== 任务管理 ===== */
+.add-form{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+.add-form input{flex:1;min-width:200px;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:12px 16px;color:var(--txt);font-size:14px;outline:none;transition:.2s}
+.add-form input:focus{border-color:var(--green)}
+.add-form select{background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:12px 14px;color:var(--txt);font-size:14px;outline:none}
+.btn-add{background:linear-gradient(135deg,var(--green),#4e9228);color:#fff;padding:12px 26px;border-radius:10px;font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px;transition:.2s}
+.btn-add:hover{transform:translateY(-2px);box-shadow:var(--glow)}
+
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
+.fchip{padding:7px 16px;border-radius:20px;font-size:13px;background:var(--panel);border:1px solid var(--line);color:var(--mut);transition:.2s}
+.fchip:hover{border-color:var(--green)}
+.fchip.active{background:rgba(109,179,63,.15);color:var(--green-l);border-color:var(--green)}
+
+.task-list{display:flex;flex-direction:column;gap:10px}
+.task{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:15px 18px;display:flex;align-items:center;gap:14px;transition:.25s;animation:fade .3s}
+.task:hover{border-color:#2c4052}
+.task.done{opacity:.62}
+.task.done .t-title{text-decoration:line-through}
+.status-btn{width:26px;height:26px;border-radius:50%;border:2px solid var(--dim);display:grid;place-items:center;flex-shrink:0;transition:.2s}
+.status-btn.todo{border-color:var(--dim)}
+.status-btn.in_progress{border-color:var(--blue);background:rgba(79,158,245,.15)}
+.status-btn.done{border-color:var(--green);background:var(--green);color:#04150a}
+.status-btn .spin{width:13px;height:13px;border:2px solid var(--blue);border-top-color:transparent;border-radius:50%;animation:rot 1s linear infinite}
+@keyframes rot{to{transform:rotate(360deg)}}
+.t-title{flex:1;font-size:14.5px;font-weight:500}
+.t-meta{font-size:11.5px;color:var(--dim);font-family:"JetBrains Mono",monospace;margin-top:3px}
+.badge{font-size:11px;font-weight:600;padding:4px 11px;border-radius:20px}
+.b-priority-high{background:rgba(245,108,108,.15);color:var(--red)}
+.b-priority-medium{background:rgba(245,185,66,.15);color:var(--amber)}
+.b-priority-low{background:rgba(45,212,191,.14);color:var(--teal)}
+.b-assignee{background:var(--panel-2);color:var(--mut);border:1px solid var(--line)}
+.t-del{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;color:var(--dim);transition:.2s}
+.t-del:hover{background:rgba(245,108,108,.15);color:var(--red)}
+
+.empty{text-align:center;padding:60px;color:var(--dim);font-size:14px}
+
+/* 响应式 */
+@media(max-width:1000px){
+  .kpi-grid{grid-template-columns:repeat(2,1fr)}
+  .chart-grid{grid-template-columns:1fr}
+  .metric-row{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:600px){
+  .topbar{padding:0 16px} .logo .stack{display:none}
+  .main{padding:16px 14px 30px}
+  .tabs{padding:10px 14px 0}
+  .kpi-grid{grid-template-columns:1fr 1fr;gap:10px}
+  .metric-row{grid-template-columns:1fr 1fr}
+  .clock{display:none}
+  .task{flex-wrap:wrap}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- 顶栏 -->
+  <header class="topbar">
+    <div class="logo">
+      <span class="mark"><svg width="19" height="19" viewBox="0 0 24 24" fill="none"><path d="M4 13h3l2-6 4 12 2-6h5" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      PulseBoard
+      <span class="stack">Vue 3 · Spring Boot</span>
+    </div>
+    <div class="top-right">
+      <div :class="['conn', wsConnected?'ok':'no']">
+        <span class="dot"></span>{{ wsConnected ? '实时已连接' : '正在连接' }}
+      </div>
+      <span class="clock">{{ clock }}</span>
+    </div>
+  </header>
+
+  <!-- 标签 -->
+  <nav class="tabs">
+    <button :class="['tab',{active:tab==='dashboard'}]" @click="switchTab('dashboard')">实时看板</button>
+    <button :class="['tab',{active:tab==='tasks'}]" @click="switchTab('tasks')">任务管理</button>
+  </nav>
+
+  <main class="main">
+    <!-- ===== 看板视图 ===== -->
+    <div class="view" v-show="tab==='dashboard'">
+      <div class="kpi-grid">
+        <div class="kpi green">
+          <div class="k-lbl"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="16" height="16" rx="2" stroke="currentColor" stroke-width="1.7"/></svg>任务总数</div>
+          <div class="k-val">{{ stats.total ?? '—' }}</div>
+          <div class="k-sub">全部任务数量</div>
+        </div>
+        <div class="kpi blue">
+          <div class="k-lbl"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 8v4l3 2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.7"/></svg>进行中</div>
+          <div class="k-val">{{ stats.byStatus?.in_progress ?? 0 }}</div>
+          <div class="k-sub">正在处理的任务</div>
+        </div>
+        <div class="kpi teal">
+          <div class="k-lbl"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 12l4 4 10-10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>已完成</div>
+          <div class="k-val">{{ stats.byStatus?.done ?? 0 }}</div>
+          <div class="k-sub">完成的任务</div>
+        </div>
+        <div class="kpi amber">
+          <div class="k-lbl"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 3v18M5 8l7-5 7 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>完成率</div>
+          <div class="k-val">{{ stats.completionRate ?? 0 }}%</div>
+          <div class="k-sub">整体完成进度</div>
+        </div>
+      </div>
+
+      <div class="chart-grid">
+        <div class="panel">
+          <div class="panel-head">
+            <h3><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M4 18l5-6 4 3 7-9" stroke="#6DB33F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>实时服务器指标</h3>
+            <span class="live-tag"><span class="dot"></span>LIVE · WebSocket</span>
+          </div>
+          <div class="chart" ref="lineChart"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h3>任务状态分布</h3></div>
+          <div class="chart sm" ref="pieChart"></div>
+        </div>
+      </div>
+
+      <div class="metric-row">
+        <div class="metric">
+          <div class="m-lbl">CPU 占用</div>
+          <div class="m-val">{{ live.cpu ?? 0 }}%</div>
+          <div class="bar"><i :style="{width:(live.cpu||0)+'%'}"></i></div>
+        </div>
+        <div class="metric">
+          <div class="m-lbl">内存占用</div>
+          <div class="m-val">{{ live.memory ?? 0 }}%</div>
+          <div class="bar"><i :style="{width:(live.memory||0)+'%'}"></i></div>
+        </div>
+        <div class="metric">
+          <div class="m-lbl">每秒请求</div>
+          <div class="m-val">{{ live.rps ?? 0 }}</div>
+          <div class="bar"><i :style="{width:Math.min(100,(live.rps||0)*1.2)+'%'}"></i></div>
+        </div>
+        <div class="metric">
+          <div class="m-lbl">在线连接</div>
+          <div class="m-val">{{ live.connections ?? 0 }}</div>
+          <div class="bar"><i :style="{width:Math.min(100,(live.connections||0)*20)+'%'}"></i></div>
+        </div>
+        <div class="metric">
+          <div class="m-lbl">累计请求</div>
+          <div class="m-val">{{ fmtNum(live.totalRequests) }}</div>
+          <div class="bar"><i style="width:80%"></i></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 任务视图 ===== -->
+    <div class="view" v-show="tab==='tasks'">
+      <div class="panel add-form">
+        <input v-model="form.title" placeholder="输入新任务标题，回车快速添加" @keyup.enter="addTask">
+        <select v-model="form.priority">
+          <option value="high">高优先级</option>
+          <option value="medium">中优先级</option>
+          <option value="low">低优先级</option>
+        </select>
+        <select v-model="form.assignee">
+          <option>小林</option><option>阿泽</option><option>小雨</option>
+        </select>
+        <button class="btn-add" @click="addTask">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>添加任务
+        </button>
+      </div>
+
+      <div class="filters">
+        <button v-for="f in filters" :key="f.v"
+                :class="['fchip',{active:filt===f.v}]" @click="filt=f.v">{{ f.label }}</button>
+      </div>
+
+      <div class="task-list">
+        <div class="task" v-for="t in filteredTasks" :key="t.id" :class="{done:t.status==='done'}">
+          <button :class="['status-btn',t.status]" @click="cycleStatus(t)">
+            <svg v-if="t.status==='done'" width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 12l4 4 10-10" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span v-else-if="t.status==='in_progress'" class="spin"></span>
+          </button>
+          <div style="flex:1">
+            <div class="t-title">{{ t.title }}</div>
+            <div class="t-meta">#{{ t.id }} · 截止 {{ fmtDate(t.dueAt) }}</div>
+          </div>
+          <span :class="['badge','b-priority-'+t.priority]">{{ priorityLabel(t.priority) }}</span>
+          <span class="badge b-assignee">{{ t.assignee }}</span>
+          <button class="t-del" @click="removeTask(t.id)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+        <div class="empty" v-if="filteredTasks.length===0">没有符合条件的任务</div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+const { createApp } = Vue;
+
+createApp({
+  data() {
+    return {
+      tab: 'dashboard',
+      wsConnected: false,
+      clock: '',
+      stats: {},
+      live: {},
+      tasks: [],
+      form: { title: '', priority: 'medium', assignee: '小林' },
+      filt: 'all',
+      filters: [
+        { v: 'all', label: '全部' },
+        { v: 'todo', label: '待办' },
+        { v: 'in_progress', label: '进行中' },
+        { v: 'done', label: '已完成' },
+        { v: 'high', label: '高优先级' }
+      ],
+      // 图表数据（非响应式，放实例外）
+      hist: { time: [], cpu: [], mem: [], rps: [] }
+    };
+  },
+  computed: {
+    filteredTasks() {
+      if (this.filt === 'all') return this.tasks;
+      if (this.filt === 'high') return this.tasks.filter(t => t.priority === 'high');
+      return this.tasks.filter(t => t.status === this.filt);
+    }
+  },
+  async mounted() {
+    this.initCharts();
+    await this.loadAll();
+    this.connectWS();
+    this.tickClock();
+    setInterval(this.tickClock, 1000);
+    // 定期刷新统计，保证 CRUD 后看板同步
+    setInterval(this.loadStats, 5000);
+    window.addEventListener('resize', () => { this.line && this.line.resize(); this.pie && this.pie.resize(); });
+  },
+  methods: {
+    async loadAll() {
+      try {
+        const [t, s] = await Promise.all([
+          fetch('/api/tasks').then(r => r.json()),
+          fetch('/api/tasks/stats').then(r => r.json())
+        ]);
+        this.tasks = t; this.stats = s;
+        this.updatePie();
+      } catch (e) { console.error('加载失败', e); }
+    },
+    async loadStats() {
+      try {
+        this.stats = await fetch('/api/tasks/stats').then(r => r.json());
+        this.updatePie();
+        // 同时刷新任务列表（多标签页场景）
+        fetch('/api/tasks').then(r => r.json()).then(t => this.tasks = t);
+      } catch (e) {}
+    },
+
+    async addTask() {
+      const title = this.form.title.trim();
+      if (!title) return;
+      const body = { title, priority: this.form.priority, assignee: this.form.assignee,
+                     dueAt: Date.now() + 4 * 86400000 };
+      try {
+        await fetch('/api/tasks', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        }).then(r => r.json());
+        this.form.title = '';
+        await this.loadAll();
+      } catch (e) { console.error('添加失败', e); }
+    },
+
+    async cycleStatus(t) {
+      const order = { todo: 'in_progress', in_progress: 'done', done: 'todo' };
+      const next = order[t.status];
+      try {
+        await fetch('/api/tasks/' + t.id, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: next })
+        }).then(r => r.json());
+        await this.loadAll();
+      } catch (e) { console.error('更新失败', e); }
+    },
+
+    async removeTask(id) {
+      try {
+        await fetch('/api/tasks/' + id, { method: 'DELETE' });
+        this.tasks = this.tasks.filter(t => t.id !== id);
+        await this.loadStats();
+      } catch (e) { console.error('删除失败', e); }
+    },
+
+    switchTab(t) {
+      this.tab = t;
+      this.$nextTick(() => {
+        if (t === 'dashboard') {
+          this.line && this.line.resize();
+          this.pie && this.pie.resize();
+        }
+      });
+    },
+
+    // ===== WebSocket =====
+    connectWS() {
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      const ws = new WebSocket(proto + '://' + location.host + '/ws/metrics');
+      ws.onopen = () => { this.wsConnected = true; };
+      ws.onclose = () => {
+        this.wsConnected = false;
+        setTimeout(this.connectWS, 3000); // 断线自动重连
+      };
+      ws.onmessage = (ev) => {
+        const m = JSON.parse(ev.data);
+        this.live = m;
+        this.pushLine(m);
+      };
+    },
+
+    // ===== 图表 =====
+    initCharts() {
+      const axis = {
+        axisLine: { lineStyle: { color: '#2a3a4a' } },
+        axisLabel: { color: '#6b7f90', fontFamily: 'JetBrains Mono', fontSize: 10 },
+        splitLine: { lineStyle: { color: '#1a2632' } }
+      };
+      this.line = echarts.init(this.$refs.lineChart);
+      this.line.setOption({
+        backgroundColor: 'transparent',
+        grid: { left: 46, right: 50, top: 36, bottom: 28 },
+        tooltip: { trigger: 'axis', backgroundColor: '#16222e', borderColor: '#2c4052',
+                   textStyle: { color: '#e6edf3', fontSize: 12 } },
+        legend: { data: ['CPU', '内存', '请求/秒'], textStyle: { color: '#8295a5', fontSize: 11 },
+                  top: 0, right: 0, itemWidth: 14, itemHeight: 8 },
+        xAxis: { type: 'category', data: [], boundaryGap: false, ...axis },
+        yAxis: [
+          { type: 'value', max: 100, name: '%', nameTextStyle: { color: '#6b7f90' }, ...axis },
+          { type: 'value', name: 'rps', nameTextStyle: { color: '#6b7f90' }, splitLine: { show: false },
+            axisLine: { lineStyle: { color: '#2a3a4a' } }, axisLabel: { color: '#6b7f90', fontSize: 10 } }
+        ],
+                series: [
+          { name: 'CPU', type: 'line', smooth: true, symbol: 'circle', symbolSize: 4, showSymbol: true, data: [],
+            lineStyle: { width: 2, color: '#6DB33F' },
+            itemStyle: { color: '#6DB33F' },
+            areaStyle: { color: { type:'linear', x:0,y:0,x2:0,y2:1,
+              colorStops:[{offset:0,color:'rgba(109,179,63,.35)'},{offset:1,color:'rgba(109,179,63,0)'}] } } },
+          { name: '内存', type: 'line', smooth: true, symbol: 'circle', symbolSize: 4, showSymbol: true, data: [],
+            lineStyle: { width: 2, color: '#2dd4bf' },
+            itemStyle: { color: '#2dd4bf' },
+            areaStyle: { color: { type:'linear', x:0,y:0,x2:0,y2:1,
+              colorStops:[{offset:0,color:'rgba(45,212,191,.28)'},{offset:1,color:'rgba(45,212,191,0)'}] } } },
+          { name: '请求/秒', type: 'line', smooth: true, symbol: 'circle', symbolSize: 4, showSymbol: true, yAxisIndex: 1, data: [],
+            lineStyle: { width: 2, color: '#4f9ef5' }, itemStyle: { color: '#4f9ef5' } }
+        ]
+      });
+
+      this.pie = echarts.init(this.$refs.pieChart);
+      this.pie.setOption({
+        backgroundColor: 'transparent',
+        tooltip: { backgroundColor: '#16222e', borderColor: '#2c4052', textStyle: { color: '#e6edf3' } },
+        legend: { bottom: 0, textStyle: { color: '#8295a5', fontSize: 11 }, itemWidth: 12, itemHeight: 8 },
+        series: [{
+          type: 'pie', radius: ['48%', '72%'], center: ['50%', '45%'],
+          avoidLabelOverlap: true, label: { color: '#e6edf3', fontSize: 12, formatter: '{c}' },
+          itemStyle: { borderColor: '#121b24', borderWidth: 3 },
+          data: [
+            { value: 0, name: '待办', itemStyle: { color: '#5a6d7d' } },
+            { value: 0, name: '进行中', itemStyle: { color: '#4f9ef5' } },
+            { value: 0, name: '已完成', itemStyle: { color: '#6DB33F' } }
+          ]
+        }]
+      });
+    },
+
+    pushLine(m) {
+      const h = this.hist;
+      const t = new Date(m.time);
+      const label = String(t.getHours()).padStart(2,'0') + ':' + String(t.getMinutes()).padStart(2,'0')
+                    + ':' + String(t.getSeconds()).padStart(2,'0');
+      h.time.push(label); h.cpu.push(m.cpu); h.mem.push(m.memory); h.rps.push(m.rps);
+      if (h.time.length > 30) { h.time.shift(); h.cpu.shift(); h.mem.shift(); h.rps.shift(); }
+      this.line.setOption({
+        xAxis: { data: h.time },
+        series: [{ data: h.cpu }, { data: h.mem }, { data: h.rps }]
+      });
+    },
+
+    updatePie() {
+      const s = this.stats.byStatus;
+      if (!s || !this.pie) return;
+      this.pie.setOption({ series: [{ data: [
+        { value: s.todo, name: '待办', itemStyle: { color: '#5a6d7d' } },
+        { value: s.in_progress, name: '进行中', itemStyle: { color: '#4f9ef5' } },
+        { value: s.done, name: '已完成', itemStyle: { color: '#6DB33F' } }
+      ] }] });
+    },
+
+    // ===== 工具 =====
+    tickClock() {
+      const d = new Date();
+      this.clock = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0')
+                   + ':' + String(d.getSeconds()).padStart(2,'0');
+    },
+    fmtNum(n) { return n == null ? '0' : Number(n).toLocaleString('en-US'); },
+    fmtDate(ts) {
+      if (!ts) return '—';
+      const d = new Date(ts);
+      return (d.getMonth()+1) + '/' + d.getDate();
+    },
+    priorityLabel(p) { return { high: '高', medium: '中', low: '低' }[p] || p; }
+  }
+}).mount('#app');
+</script>
+</body>
+</html>
