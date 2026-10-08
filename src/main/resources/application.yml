@@ -1,0 +1,31 @@
+# ===== 公共配置（所有 profile 共享） =====
+spring:
+  application:
+    name: demo
+
+# ===== dev（开发环境） =====
+---
+spring:
+  config:
+    activate:
+      on-profile: dev
+server:
+  port: 8080
+
+# 自定义环境标识，方便启动后确认当前 profile
+app:
+  env: dev
+  description: 开发环境（Development）
+
+# ===== prod（生产环境） =====
+---
+spring:
+  config:
+    activate:
+      on-profile: prod
+server:
+  port: 8081
+
+app:
+  env: prod
+  description: 生产环境（Production）
